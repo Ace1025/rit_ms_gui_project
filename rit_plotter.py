@@ -1,109 +1,146 @@
-# main_layer1_gui.py
+# rit_plotter.py
 
-import sys
-import os
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
 import pandas as pd
-from PyQt5.QtWidgets import (QApplication, QWidget, QPushButton, QLabel, QFileDialog, 
-                             QComboBox, QVBoxLayout, QHBoxLayout, QMessageBox, QListWidget, QListWidgetItem)
-from rit_data_loader import load_rit_csv
-from rit_plotter import plot_single_spectrum, plot_overlay_spectrum
+import numpy as np
 
-class MainWindow(QWidget):
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("RIT-MS Spectrum Viewer")
-        self.setGeometry(100, 100, 600, 400)
+def plot_single_spectrum(df, title="RIT-MS Spectrum", save_path=None):
+    """
+    단일 스펙트럼을 플롯
+    
+    Args:
+        df (pd.DataFrame): RIT-MS 데이터
+        title (str): 플롯 제목
+        save_path (str, optional): 저장 경로
+    """
+    fig, ax = plt.subplots(figsize=(12, 6))
+    
+    # RF_ADC_1 [mV]를 x축으로, Signal [mV]를 y축으로
+    x_data = df['RF_ADC_1 [mV]']
+    y_data = df['Signal [mV]']
+    
+    ax.plot(x_data, y_data, linewidth=1.5, color='#007ACC')
+    ax.set_xlabel('RF ADC 1 [mV]', fontsize=12)
+    ax.set_ylabel('Signal [mV]', fontsize=12)
+    ax.set_title(title, fontsize=14, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    
+    # 스타일링
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    
+    plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    else:
+        plt.show()
+    
+    plt.close()
 
-        self.file_path = ""
-        self.df_dict = {}  # 시트별 DataFrame 저장
+def plot_overlay_spectrum(dfs, labels, title="Overlay RIT-MS Spectrum", save_path=None):
+    """
+    여러 스펙트럼을 오버레이로 플롯
+    
+    Args:
+        dfs (list): DataFrame 리스트
+        labels (list): 각 스펙트럼의 라벨
+        title (str): 플롯 제목
+        save_path (str, optional): 저장 경로
+    """
+    fig, ax = plt.subplots(figsize=(12, 6))
+    
+    colors = ['#007ACC', '#FF6B35', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7']
+    
+    for i, (df, label) in enumerate(zip(dfs, labels)):
+        x_data = df['RF_ADC_1 [mV]']
+        y_data = df['Signal [mV]']
+        color = colors[i % len(colors)]
+        
+        ax.plot(x_data, y_data, linewidth=1.5, label=label, color=color)
+    
+    ax.set_xlabel('RF ADC 1 [mV]', fontsize=12)
+    ax.set_ylabel('Signal [mV]', fontsize=12)
+    ax.set_title(title, fontsize=14, fontweight='bold')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    
+    # 스타일링
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    
+    plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    else:
+        plt.show()
+    
+    plt.close()
 
-        # 위젯 생성
-        self.browse_btn = QPushButton("Browse CSV / Excel")
-        self.sheet_combo = QComboBox()
-        self.plot_btn = QPushButton("Plot")
-        self.overlay_list = QListWidget()
-        self.overlay_btn = QPushButton("Overlay Plot")
-        self.save_btn = QPushButton("Save Plot")
-
-        # 레이아웃 구성
-        layout = QVBoxLayout()
-        layout.addWidget(self.browse_btn)
-        layout.addWidget(QLabel("Select Sheet:"))
-        layout.addWidget(self.sheet_combo)
-        layout.addWidget(self.plot_btn)
-        layout.addWidget(QLabel("Overlay Select (multi-select with Ctrl):"))
-        layout.addWidget(self.overlay_list)
-        layout.addWidget(self.overlay_btn)
-        layout.addWidget(self.save_btn)
-
-        self.setLayout(layout)
-
-        # 이벤트 연결
-        self.browse_btn.clicked.connect(self.browse_file)
-        self.plot_btn.clicked.connect(self.plot_spectrum)
-        self.overlay_btn.clicked.connect(self.plot_overlay)
-        self.save_btn.clicked.connect(self.save_plot)
-
-    def browse_file(self):
-        file_name, _ = QFileDialog.getOpenFileName(self, "Open CSV or Excel", "", 
-                                                   "Excel Files (*.xlsx);;CSV Files (*.csv)")
-        if file_name:
-            self.file_path = file_name
-            self.df_dict.clear()
-            self.sheet_combo.clear()
-            self.overlay_list.clear()
-
-            if file_name.endswith('.xlsx'):
-                xls = pd.ExcelFile(file_name)
-                for sheet in xls.sheet_names:
-                    df = load_rit_csv(file_name, sheet)
-                    self.df_dict[sheet] = df
-                    self.sheet_combo.addItem(sheet)
-                    self.overlay_list.addItem(sheet)
-            else:
-                df = load_rit_csv(file_name, None)
-                self.df_dict["CSV"] = df
-                self.sheet_combo.addItem("CSV")
-                self.overlay_list.addItem("CSV")
-
-            QMessageBox.information(self, "File Loaded", f"Loaded: {os.path.basename(file_name)}")
-
-    def plot_spectrum(self):
-        sheet = self.sheet_combo.currentText()
-        if sheet and sheet in self.df_dict:
-            df = self.df_dict[sheet]
-            plot_single_spectrum(df, title=f"{sheet} - RIT-MS Spectrum")
-        else:
-            QMessageBox.warning(self, "Warning", "No sheet selected or data not loaded.")
-
-    def plot_overlay(self):
-        selected_items = self.overlay_list.selectedItems()
-        if len(selected_items) < 2:
-            QMessageBox.warning(self, "Warning", "Select at least 2 sheets for overlay.")
-            return
-
-        dfs = []
-        labels = []
-        for item in selected_items:
-            sheet = item.text()
-            if sheet in self.df_dict:
-                dfs.append(self.df_dict[sheet])
-                labels.append(sheet)
-
-        plot_overlay_spectrum(dfs, labels, title="Overlay RIT-MS Spectrum")
-
-    def save_plot(self):
-        save_path, _ = QFileDialog.getSaveFileName(self, "Save Plot", "", "PNG Files (*.png)")
-        if save_path:
-            # 저장용으로는 단일 시트 plot
-            sheet = self.sheet_combo.currentText()
-            if sheet and sheet in self.df_dict:
-                df = self.df_dict[sheet]
-                plot_single_spectrum(df, title=f"{sheet} - RIT-MS Spectrum", save_path=save_path)
-                QMessageBox.information(self, "Saved", f"Plot saved to {save_path}")
-
-if __name__ == '__main__':
-    app = QApplication(sys.argv)
-    window = MainWindow()
-    window.show()
-    sys.exit(app.exec_())
+class RITPlotterWidget:
+    """
+    PyQt 위젯으로 사용할 수 있는 RIT-MS 플로터
+    """
+    def __init__(self, parent=None):
+        self.figure = Figure(figsize=(12, 6))
+        self.canvas = FigureCanvas(self.figure)
+        self.ax = self.figure.add_subplot(111)
+        
+    def plot_spectrum(self, df, title="RIT-MS Spectrum"):
+        """위젯에 스펙트럼 플롯"""
+        self.ax.clear()
+        
+        x_data = df['RF_ADC_1 [mV]']
+        y_data = df['Signal [mV]']
+        
+        self.ax.plot(x_data, y_data, linewidth=1.5, color='#007ACC')
+        self.ax.set_xlabel('RF ADC 1 [mV]', fontsize=12)
+        self.ax.set_ylabel('Signal [mV]', fontsize=12)
+        self.ax.set_title(title, fontsize=14, fontweight='bold')
+        self.ax.grid(True, alpha=0.3)
+        
+        # 스타일링
+        self.ax.spines['top'].set_visible(False)
+        self.ax.spines['right'].set_visible(False)
+        
+        self.figure.tight_layout()
+        self.canvas.draw()
+    
+    def plot_overlay(self, dfs, labels, title="Overlay RIT-MS Spectrum"):
+        """위젯에 오버레이 스펙트럼 플롯"""
+        self.ax.clear()
+        
+        colors = ['#007ACC', '#FF6B35', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7']
+        
+        for i, (df, label) in enumerate(zip(dfs, labels)):
+            x_data = df['RF_ADC_1 [mV]']
+            y_data = df['Signal [mV]']
+            color = colors[i % len(colors)]
+            
+            self.ax.plot(x_data, y_data, linewidth=1.5, label=label, color=color)
+        
+        self.ax.set_xlabel('RF ADC 1 [mV]', fontsize=12)
+        self.ax.set_ylabel('Signal [mV]', fontsize=12)
+        self.ax.set_title(title, fontsize=14, fontweight='bold')
+        self.ax.legend()
+        self.ax.grid(True, alpha=0.3)
+        
+        # 스타일링
+        self.ax.spines['top'].set_visible(False)
+        self.ax.spines['right'].set_visible(False)
+        
+        self.figure.tight_layout()
+        self.canvas.draw()
+    
+    def clear(self):
+        """플롯 클리어"""
+        self.ax.clear()
+        self.canvas.draw()
+    
+    def save_plot(self, save_path):
+        """플롯 저장"""
+        self.figure.savefig(save_path, dpi=300, bbox_inches='tight')
