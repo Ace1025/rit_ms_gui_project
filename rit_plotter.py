@@ -1,109 +1,184 @@
-# main_layer1_gui.py
+# rit_plotter.py
 
-import sys
-import os
+import matplotlib.pyplot as plt
 import pandas as pd
-from PyQt5.QtWidgets import (QApplication, QWidget, QPushButton, QLabel, QFileDialog, 
-                             QComboBox, QVBoxLayout, QHBoxLayout, QMessageBox, QListWidget, QListWidgetItem)
-from rit_data_loader import load_rit_csv
-from rit_plotter import plot_single_spectrum, plot_overlay_spectrum
+import numpy as np
 
-class MainWindow(QWidget):
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("RIT-MS Spectrum Viewer")
-        self.setGeometry(100, 100, 600, 400)
-
-        self.file_path = ""
-        self.df_dict = {}  # 시트별 DataFrame 저장
-
-        # 위젯 생성
-        self.browse_btn = QPushButton("Browse CSV / Excel")
-        self.sheet_combo = QComboBox()
-        self.plot_btn = QPushButton("Plot")
-        self.overlay_list = QListWidget()
-        self.overlay_btn = QPushButton("Overlay Plot")
-        self.save_btn = QPushButton("Save Plot")
-
-        # 레이아웃 구성
-        layout = QVBoxLayout()
-        layout.addWidget(self.browse_btn)
-        layout.addWidget(QLabel("Select Sheet:"))
-        layout.addWidget(self.sheet_combo)
-        layout.addWidget(self.plot_btn)
-        layout.addWidget(QLabel("Overlay Select (multi-select with Ctrl):"))
-        layout.addWidget(self.overlay_list)
-        layout.addWidget(self.overlay_btn)
-        layout.addWidget(self.save_btn)
-
-        self.setLayout(layout)
-
-        # 이벤트 연결
-        self.browse_btn.clicked.connect(self.browse_file)
-        self.plot_btn.clicked.connect(self.plot_spectrum)
-        self.overlay_btn.clicked.connect(self.plot_overlay)
-        self.save_btn.clicked.connect(self.save_plot)
-
-    def browse_file(self):
-        file_name, _ = QFileDialog.getOpenFileName(self, "Open CSV or Excel", "", 
-                                                   "Excel Files (*.xlsx);;CSV Files (*.csv)")
-        if file_name:
-            self.file_path = file_name
-            self.df_dict.clear()
-            self.sheet_combo.clear()
-            self.overlay_list.clear()
-
-            if file_name.endswith('.xlsx'):
-                xls = pd.ExcelFile(file_name)
-                for sheet in xls.sheet_names:
-                    df = load_rit_csv(file_name, sheet)
-                    self.df_dict[sheet] = df
-                    self.sheet_combo.addItem(sheet)
-                    self.overlay_list.addItem(sheet)
-            else:
-                df = load_rit_csv(file_name, None)
-                self.df_dict["CSV"] = df
-                self.sheet_combo.addItem("CSV")
-                self.overlay_list.addItem("CSV")
-
-            QMessageBox.information(self, "File Loaded", f"Loaded: {os.path.basename(file_name)}")
-
-    def plot_spectrum(self):
-        sheet = self.sheet_combo.currentText()
-        if sheet and sheet in self.df_dict:
-            df = self.df_dict[sheet]
-            plot_single_spectrum(df, title=f"{sheet} - RIT-MS Spectrum")
+def plot_single_spectrum(df, title="RIT-MS Spectrum", save_path=None):
+    """
+    단일 스펙트럼 플롯
+    
+    Args:
+        df (pd.DataFrame): 스펙트럼 데이터
+        title (str): 그래프 제목
+        save_path (str or None): 저장 경로 (None이면 화면에 표시)
+    """
+    plt.figure(figsize=(10, 6))
+    
+    # 기본 컬럼명 확인
+    x_col = 'RF_ADC_1 [mV]'
+    y_col = 'Signal [mV]'
+    
+    if x_col in df.columns and y_col in df.columns:
+        plt.plot(df[x_col], df[y_col], linewidth=1.5, color='blue')
+        plt.xlabel(x_col)
+        plt.ylabel(y_col)
+    else:
+        # 컬럼명이 다른 경우 첫 번째와 두 번째 컬럼 사용
+        cols = df.columns.tolist()
+        if len(cols) >= 2:
+            plt.plot(df.iloc[:, 0], df.iloc[:, 1], linewidth=1.5, color='blue')
+            plt.xlabel(cols[0])
+            plt.ylabel(cols[1])
         else:
-            QMessageBox.warning(self, "Warning", "No sheet selected or data not loaded.")
+            raise ValueError("데이터에 최소 2개의 컬럼이 필요합니다.")
+    
+    plt.title(title, fontsize=14, fontweight='bold')
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"Plot saved to {save_path}")
+    else:
+        plt.show()
 
-    def plot_overlay(self):
-        selected_items = self.overlay_list.selectedItems()
-        if len(selected_items) < 2:
-            QMessageBox.warning(self, "Warning", "Select at least 2 sheets for overlay.")
-            return
+def plot_overlay_spectrum(dfs, labels, title="Overlay RIT-MS Spectrum", save_path=None):
+    """
+    여러 스펙트럼을 겹쳐서 플롯
+    
+    Args:
+        dfs (list): DataFrame 리스트
+        labels (list): 각 스펙트럼의 라벨
+        title (str): 그래프 제목
+        save_path (str or None): 저장 경로 (None이면 화면에 표시)
+    """
+    plt.figure(figsize=(12, 8))
+    
+    colors = ['blue', 'red', 'green', 'orange', 'purple', 'brown', 'pink', 'gray']
+    
+    x_col = 'RF_ADC_1 [mV]'
+    y_col = 'Signal [mV]'
+    
+    for i, (df, label) in enumerate(zip(dfs, labels)):
+        color = colors[i % len(colors)]
+        
+        if x_col in df.columns and y_col in df.columns:
+            plt.plot(df[x_col], df[y_col], linewidth=1.5, color=color, label=label, alpha=0.8)
+        else:
+            # 컬럼명이 다른 경우 첫 번째와 두 번째 컬럼 사용
+            cols = df.columns.tolist()
+            if len(cols) >= 2:
+                plt.plot(df.iloc[:, 0], df.iloc[:, 1], linewidth=1.5, color=color, label=label, alpha=0.8)
+    
+    plt.xlabel(x_col if x_col in dfs[0].columns else dfs[0].columns[0])
+    plt.ylabel(y_col if y_col in dfs[0].columns else dfs[0].columns[1])
+    plt.title(title, fontsize=14, fontweight='bold')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"Overlay plot saved to {save_path}")
+    else:
+        plt.show()
 
-        dfs = []
-        labels = []
-        for item in selected_items:
-            sheet = item.text()
-            if sheet in self.df_dict:
-                dfs.append(self.df_dict[sheet])
-                labels.append(sheet)
+def plot_spectrum_with_peaks(df, peaks_df=None, title="RIT-MS Spectrum with Peaks", save_path=None):
+    """
+    피크가 표시된 스펙트럼 플롯
+    
+    Args:
+        df (pd.DataFrame): 스펙트럼 데이터
+        peaks_df (pd.DataFrame or None): 피크 데이터 (x, y 좌표)
+        title (str): 그래프 제목
+        save_path (str or None): 저장 경로
+    """
+    plt.figure(figsize=(12, 8))
+    
+    x_col = 'RF_ADC_1 [mV]'
+    y_col = 'Signal [mV]'
+    
+    # 기본 스펙트럼 플롯
+    if x_col in df.columns and y_col in df.columns:
+        plt.plot(df[x_col], df[y_col], linewidth=1.5, color='blue', label='Spectrum')
+        
+        # 피크 표시
+        if peaks_df is not None and not peaks_df.empty:
+            plt.scatter(peaks_df[x_col], peaks_df[y_col], 
+                       color='red', s=50, marker='o', label='Peaks', zorder=5)
+            
+            # 피크에 텍스트 라벨 추가
+            for idx, row in peaks_df.iterrows():
+                plt.annotate(f'({row[x_col]:.1f}, {row[y_col]:.1f})', 
+                           (row[x_col], row[y_col]), 
+                           xytext=(5, 5), textcoords='offset points',
+                           fontsize=8, alpha=0.8)
+    
+    plt.xlabel(x_col)
+    plt.ylabel(y_col)
+    plt.title(title, fontsize=14, fontweight='bold')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"Plot with peaks saved to {save_path}")
+    else:
+        plt.show()
 
-        plot_overlay_spectrum(dfs, labels, title="Overlay RIT-MS Spectrum")
-
-    def save_plot(self):
-        save_path, _ = QFileDialog.getSaveFileName(self, "Save Plot", "", "PNG Files (*.png)")
-        if save_path:
-            # 저장용으로는 단일 시트 plot
-            sheet = self.sheet_combo.currentText()
-            if sheet and sheet in self.df_dict:
-                df = self.df_dict[sheet]
-                plot_single_spectrum(df, title=f"{sheet} - RIT-MS Spectrum", save_path=save_path)
-                QMessageBox.information(self, "Saved", f"Plot saved to {save_path}")
-
-if __name__ == '__main__':
-    app = QApplication(sys.argv)
-    window = MainWindow()
-    window.show()
-    sys.exit(app.exec_())
+def create_summary_plot(dfs, labels, title="RIT-MS Summary", save_path=None):
+    """
+    여러 스펙트럼의 요약 플롯 (서브플롯)
+    
+    Args:
+        dfs (list): DataFrame 리스트
+        labels (list): 각 스펙트럼의 라벨
+        title (str): 전체 그래프 제목
+        save_path (str or None): 저장 경로
+    """
+    n_plots = len(dfs)
+    n_cols = 2
+    n_rows = (n_plots + n_cols - 1) // n_cols
+    
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(15, 5*n_rows))
+    if n_plots == 1:
+        axes = [axes]
+    elif n_rows == 1:
+        axes = [axes]
+    else:
+        axes = axes.flatten()
+    
+    x_col = 'RF_ADC_1 [mV]'
+    y_col = 'Signal [mV]'
+    
+    for i, (df, label) in enumerate(zip(dfs, labels)):
+        ax = axes[i]
+        
+        if x_col in df.columns and y_col in df.columns:
+            ax.plot(df[x_col], df[y_col], linewidth=1.2, color='blue')
+            ax.set_xlabel(x_col)
+            ax.set_ylabel(y_col)
+        else:
+            cols = df.columns.tolist()
+            if len(cols) >= 2:
+                ax.plot(df.iloc[:, 0], df.iloc[:, 1], linewidth=1.2, color='blue')
+                ax.set_xlabel(cols[0])
+                ax.set_ylabel(cols[1])
+        
+        ax.set_title(label, fontweight='bold')
+        ax.grid(True, alpha=0.3)
+    
+    # 빈 서브플롯 숨기기
+    for i in range(n_plots, len(axes)):
+        axes[i].set_visible(False)
+    
+    plt.suptitle(title, fontsize=16, fontweight='bold')
+    plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"Summary plot saved to {save_path}")
+    else:
+        plt.show()
